@@ -1,0 +1,43 @@
+# Prerequisites:
+#   1. jq installed: brew install jq
+#   2. orcai-plugins jq sidecar installed: cd plugins/jq && make install
+#   3. Internet access (fetches https://httpbin.org/json)
+#
+# Run:
+#   orcai pipeline run examples/jq-transform.pipeline.yaml
+#
+# This pipeline demonstrates real CLI tool chaining:
+#   1. builtin.http_get  — fetch JSON from a public API
+#   2. jq (sidecar)      — extract a field using a jq filter expression
+#   3. builtin.assert    — validate the extracted value is non-empty
+#
+# The jq step uses the pure YAML sidecar: no compiled binary, just
+# system jq wrapped via `sh -c 'jq "$ORCAI_FILTER"'`.
+
+name: jq-transform-demo
+version: "1.0"
+
+steps:
+  - id: fetch
+    executor: builtin.http_get
+    args:
+      url: "https://httpbin.org/json"
+      timeout: "10s"
+
+  - id: extract
+    plugin: jq
+    needs: [fetch]
+    input: "{{step.fetch.data.body}}"
+    vars:
+      filter: ".slideshow.title"
+
+  - id: check
+    executor: builtin.assert
+    needs: [extract]
+    args:
+      condition: "contains:Sample"
+      value: "{{step.extract.data.value}}"
+      message: "Expected extracted title to contain 'Sample'"
+
+  - id: output
+    type: output

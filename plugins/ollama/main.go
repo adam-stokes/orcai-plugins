@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 )
 
@@ -60,7 +61,19 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer, get
 
 	result, err := callOllama(baseURL, model, prompt)
 	if err != nil {
-		return err
+		if strings.Contains(err.Error(), "not found") {
+			fmt.Fprintf(stderr, "Model %q not found locally — pulling...\n", model)
+			pull := exec.Command("ollama", "pull", model)
+			pull.Stdout = stderr
+			pull.Stderr = stderr
+			if pullErr := pull.Run(); pullErr != nil {
+				return fmt.Errorf("ollama pull %s: %w", model, pullErr)
+			}
+			result, err = callOllama(baseURL, model, prompt)
+		}
+		if err != nil {
+			return err
+		}
 	}
 
 	fmt.Fprint(stdout, result)

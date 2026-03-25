@@ -1,0 +1,25 @@
+# Prerequisites:
+#   1. Ollama installed and running: ollama serve
+#   2. Model pulled:                 ollama pull llama3.2
+#   3. opencode installed:           brew install opencode (or npm i -g opencode-ai)
+#   4. orcai-opencode installed:     cd plugins/opencode && make install
+#
+# Run:
+#   orcai pipeline run examples/opencode-local.pipeline.yaml
+#
+# This pipeline demonstrates an agentic step using opencode with a local
+# Ollama model. opencode provides tool use and agentic reasoning on top
+# of the raw Ollama completion API.
+
+name: opencode-local-demo
+version: "1.0"
+
+steps:
+  - id: agent
+    plugin: opencode
+    prompt: "In one paragraph, explain what a Go interface is and why it is useful for dependency injection."
+    vars:
+      model: ollama/llama3.2:latest
+
+  - id: output
+    type: output

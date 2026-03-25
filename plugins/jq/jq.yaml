@@ -1,0 +1,33 @@
+# orcai sidecar descriptor for the jq plugin.
+#
+# This is a pure YAML sidecar — no compiled binary required.
+# It wraps the system `jq` binary directly using a shell command.
+#
+# Prerequisites:
+#   - jq installed on PATH (https://jqlang.org)
+#
+# Install: copy this file to ~/.config/orcai/wrappers/jq.yaml
+# No binary to install — just the sidecar.
+#
+# Calling convention:
+#   input  — JSON text, passed as stdin to jq
+#   vars   — key/value pairs exposed as ORCAI_* env vars
+#
+# Supported vars (set in pipeline step `vars:` block):
+#   filter  (optional) — jq filter expression, e.g. ".name" or ".items[0].id"
+#                        Passed to jq as ORCAI_FILTER env var.
+#                        Defaults to "." (identity — pass JSON through unchanged).
+#
+# Example pipeline step:
+#   - id: extract_title
+#     plugin: jq
+#     input: "{{step.fetch.data.value}}"
+#     vars:
+#       filter: ".slideshow.title"
+
+name: jq
+description: "Apply a jq filter expression to JSON input (https://jqlang.org)"
+command: sh
+args:
+  - "-c"
+  - 'jq "${ORCAI_FILTER:-.}"'
