@@ -25,4 +25,13 @@
 
 name: ollama
 description: "Run local AI models via the Ollama daemon (https://ollama.com)"
+kind: agent
 command: orcai-ollama
+# Default fallback models. If orcai can reach the Ollama daemon at runtime,
+# it will replace this list with the models actually installed on the system.
+# Customise here if you want to pin specific models regardless of runtime discovery.
+models:
+  - id: llama3.2:latest
+    label: "Llama 3.2"
+  - id: qwen2.5:latest
+    label: "Qwen 2.5"

@@ -1,0 +1,18 @@
+# orcai sidecar descriptor for the GitHub Copilot provider plugin.
+#
+# Install: copy this file to ~/.config/orcai/wrappers/github-copilot.yaml
+# and ensure `orcai-github-copilot` is on $PATH (run `make install`).
+#
+# Prerequisites: gh CLI with copilot extension installed and authenticated.
+#   gh extension install github/gh-copilot
+#
+# Calling convention:
+#   input  — the prompt text, passed as stdin to orcai-github-copilot
+#
+# GitHub Copilot does not expose model selection via the CLI; the model step
+# is skipped automatically when no models are declared.
+
+name: github-copilot
+description: "GitHub Copilot suggestions via the gh CLI (https://cli.github.com)"
+kind: agent
+command: orcai-github-copilot

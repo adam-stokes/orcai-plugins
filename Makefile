@@ -1,4 +1,21 @@
-.PHONY: test-e2e
+PLUGINS := ollama opencode jq claude github-copilot gemini
+
+.PHONY: build install test test-e2e clean $(PLUGINS)
+
+build: $(PLUGINS:%=build-%)
+
+build-%:
+	$(MAKE) -C plugins/$* build
+
+install: $(PLUGINS:%=install-%)
+
+install-%:
+	$(MAKE) -C plugins/$* install
+
+test: $(PLUGINS:%=test-%)
+
+test-%:
+	$(MAKE) -C plugins/$* test
 
 # Run all end-to-end tests.
 # Prerequisites: orcai, orcai-ollama, orcai-opencode, ollama, jq, opencode
@@ -6,3 +23,8 @@
 test-e2e:
 	@echo "Running e2e tests (missing tools are SKIPped automatically)..."
 	bash tests/run_all.sh
+
+clean: $(PLUGINS:%=clean-%)
+
+clean-%:
+	$(MAKE) -C plugins/$* clean

@@ -27,6 +27,7 @@
 
 name: jq
 description: "Apply a jq filter expression to JSON input (https://jqlang.org)"
+kind: tool
 command: sh
 args:
   - "-c"

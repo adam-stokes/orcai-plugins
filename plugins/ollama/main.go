@@ -19,6 +19,42 @@ func main() {
 	}
 }
 
+// modelEntry is a single model entry for --list-models JSON output.
+type modelEntry struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
+
+// listModels runs `ollama list`, parses its output, and writes JSON to stdout.
+func listModels(stdout io.Writer, stderr io.Writer) error {
+	out, err := exec.Command("ollama", "list").Output()
+	if err != nil {
+		return fmt.Errorf("ollama list: %w", err)
+	}
+	var models []modelEntry
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	for i, line := range lines {
+		if i == 0 { // skip header
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		id := fields[0]
+		models = append(models, modelEntry{ID: id, Label: id})
+	}
+	if models == nil {
+		models = []modelEntry{}
+	}
+	data, err := json.Marshal(models)
+	if err != nil {
+		return fmt.Errorf("marshalling models: %w", err)
+	}
+	fmt.Fprintln(stdout, string(data))
+	return nil
+}
+
 // run is the testable entry point.
 // args are the CLI arguments (os.Args[1:] in production).
 // getenv is the environment resolver (os.Getenv in production).
@@ -26,6 +62,13 @@ func main() {
 // Model resolution priority: --model flag > ORCAI_MODEL env var.
 // URL resolution priority:   ORCAI_OLLAMA_URL env var > default http://localhost:11434.
 func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer, getenv func(string) string) error {
+	// Handle --list-models before flag parsing.
+	for _, arg := range args {
+		if arg == "--list-models" {
+			return listModels(stdout, stderr)
+		}
+	}
+
 	fs := flag.NewFlagSet("orcai-ollama", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	modelFlag := fs.String("model", "", "Ollama model name (e.g. llama3.2)")

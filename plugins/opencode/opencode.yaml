@@ -21,4 +21,14 @@
 
 name: opencode
 description: "Agentic AI coding assistant via opencode (https://opencode.ai)"
+kind: agent
 command: orcai-opencode
+# Models listed here are defaults. opencode supports any Ollama model via
+# "ollama/<model>" format — customise this list to match your local Ollama setup.
+models:
+  - id: ollama/llama3.2
+    label: "Llama 3.2 (Ollama)"
+  - id: ollama/qwen2.5
+    label: "Qwen 2.5 (Ollama)"
+  - id: ollama/qwen2.5-coder
+    label: "Qwen 2.5 Coder (Ollama)"

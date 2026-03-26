@@ -1,7 +1,13 @@
 SIDECAR      := jq.yaml
 WRAPPERS_DIR := $(HOME)/.config/orcai/wrappers
 
-.PHONY: install test
+.PHONY: build install test clean
+
+build:
+	@: # no binary to build for jq (uses system jq)
+
+clean:
+	@: # nothing to clean
 
 install:
 	@mkdir -p $(WRAPPERS_DIR)
