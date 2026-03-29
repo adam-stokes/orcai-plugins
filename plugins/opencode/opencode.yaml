@@ -28,9 +28,15 @@ command: orcai-opencode
 models:
   - id: ollama/llama3.2:latest
     label: "Llama 3.2 (Ollama)"
+  - id: ollama/llama3.2-16k:latest
+    label: "Llama 3.2 16k (Ollama)"
   - id: ollama/qwen2.5:latest
     label: "Qwen 2.5 (Ollama)"
+  - id: ollama/qwen2.5-16k:latest
+    label: "Qwen 2.5 16k (Ollama)"
   - id: ollama/qwen2.5-coder:latest
     label: "Qwen 2.5 Coder (Ollama)"
+  - id: ollama/qwen3:8b-16k
+    label: "Qwen 3 8B 16k (Ollama)"
   - id: ollama/qwen3.5:latest
     label: "Qwen 3.5 (Ollama)"
