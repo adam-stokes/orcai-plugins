@@ -1,0 +1,157 @@
+# api-doc-gen.pipeline.yaml
+#
+# Generates API documentation for a Go codebase using semantic retrieval.
+# Indexes the source, then uses targeted prompts to pull exported types,
+# interfaces, and HTTP handler registrations into context for Sonnet to document.
+#
+# The key pattern here:
+#   Instead of dumping entire files into the prompt (expensive, noisy),
+#   the RAG injector retrieves only the chunks semantically closest to your
+#   query. "exported interface func type struct" pulls type definitions;
+#   "http handler route mux register endpoint" pulls routing code.
+#   This is far more token-efficient than cat-ing source files into a prompt.
+#
+# Model choice:
+#   Sonnet 4.6 is the right balance for documentation — it reads injected
+#   code faithfully without inventing methods, and produces clean markdown.
+#   Haiku tends to omit parameters or invent return types it didn't see.
+#
+# Prerequisites:
+#   Ollama running:              ollama serve
+#   Embedding model:             ollama pull nomic-embed-text
+#   orcai-claude installed:      cd plugins/claude && make install
+#
+# Run from your Go project root:
+#   orcai pipeline run examples/api-doc-gen.pipeline.yaml
+#   orcai pipeline run examples/api-doc-gen.pipeline.yaml --var path=./internal/pipeline
+
+name: api-doc-gen
+version: "1"
+
+vars:
+  path: "."
+  package_name: "this package"
+
+steps:
+
+  # ── 1. Index Go source ───────────────────────────────────────────────────
+  - id: index
+    executor: builtin.index_code
+    args:
+      path: "{{param.path}}"
+      extensions: ".go"
+      chunk_size: "1500"
+
+  - id: assert-indexed
+    executor: builtin.assert
+    needs: [index]
+    args:
+      condition: "not_empty"
+      value: "{{step.index.data.value}}"
+      message: "Nothing indexed — is the path correct and are there .go files?"
+
+  # ── 2. Document exported types and interfaces ────────────────────────────
+  # Vocabulary: "exported type struct interface func" surfaces public API chunks.
+  # Sonnet reads the injected chunks and documents only what it sees there.
+  - id: doc-types
+    plugin: claude
+    needs: [assert-indexed]
+    vars:
+      model: claude-sonnet-4-6
+    prompt: |
+      Document the exported Go types, interfaces, and structs from {{param.package_name}}.
+
+      The chunks most semantically similar to "exported type struct interface func
+      public API method receiver" are injected above as ## Relevant Brain Notes.
+      Each is identified by [file:path:Lstart-Lend].
+
+      For each exported type or interface you find in the injected chunks:
+      - Write a godoc-style comment block
+      - List all exported fields/methods with their signatures
+      - Note the source location: (file:path:Lstart-Lend)
+
+      Only document what appears in the injected context. Do not invent methods
+      or fields. If a type's definition is incomplete in the retrieved chunks,
+      note "definition truncated — see [file:path]".
+
+  # ── 3. Document HTTP routes / handlers ──────────────────────────────────
+  # Vocabulary: "http handler mux route endpoint path method GET POST" pulls
+  # routing registration and handler function code.
+  - id: doc-routes
+    plugin: claude
+    needs: [assert-indexed]
+    vars:
+      model: claude-sonnet-4-6
+    prompt: |
+      Document the HTTP API routes from {{param.package_name}}.
+
+      Chunks similar to "http handler mux route endpoint path method GET POST PUT
+      DELETE register HandleFunc ServeHTTP" are injected above.
+
+      Produce a route table:
+      | Method | Path | Handler | Description |
+      |--------|------|---------|-------------|
+
+      Then for each handler function visible in the injected chunks:
+      - Request parameters (path params, query params, request body shape)
+      - Response shape and status codes
+      - Source: [file:path:Lstart-Lend]
+
+      If no HTTP handlers appear in the injected context, say so — do not invent routes.
+
+  # ── 4. Document configuration and env vars ──────────────────────────────
+  # "os.Getenv config env var environment variable flag" retrieves config-reading code.
+  - id: doc-config
+    plugin: claude
+    needs: [assert-indexed]
+    vars:
+      model: claude-sonnet-4-6
+    prompt: |
+      Document the configuration surface of {{param.package_name}}: environment
+      variables read with os.Getenv, flag definitions, config struct fields,
+      and default values.
+
+      Chunks similar to "os.Getenv environment variable config flag default value
+      setting configure" are injected above.
+
+      Produce a configuration reference table:
+      | Name | Type | Default | Description | Source |
+
+      Cite each entry with its [file:path:Lstart-Lend]. Do not invent config
+      options that aren't in the injected chunks.
+
+  # ── 5. Assemble the full doc ─────────────────────────────────────────────
+  - id: assemble
+    plugin: claude
+    needs: [doc-types, doc-routes, doc-config]
+    vars:
+      model: claude-sonnet-4-6
+    prompt: |
+      Assemble a complete API reference document for {{param.package_name}}.
+
+      Format:
+      # {{param.package_name}} — API Reference
+
+      ## Overview
+      (2-3 sentences describing what this package does, inferred from the sections below)
+
+      ## Types & Interfaces
+      {{step.doc-types.data.value}}
+
+      ## HTTP API
+      {{step.doc-routes.data.value}}
+
+      ## Configuration
+      {{step.doc-config.data.value}}
+
+      ## Generated from
+      Indexed {{step.index.data.value}} using semantic retrieval (nomic-embed-text).
+
+      Clean up formatting only — do not add content beyond what is in the three
+      sections above.
+
+  - id: done
+    executor: builtin.log
+    needs: [assemble]
+    args:
+      message: "{{step.assemble.data.value}}"

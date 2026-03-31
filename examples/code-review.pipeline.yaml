@@ -1,0 +1,144 @@
+# code-review.pipeline.yaml
+#
+# Indexes the current working directory, then uses semantic search to pull
+# relevant code chunks into a targeted review. The RAG injector automatically
+# embeds each step's prompt text and prepends the top-K matching chunks as
+# "## Relevant Brain Notes" before dispatching to the model.
+#
+# Why a big model matters here:
+#   RAG-injected context contains real code fragments identified by
+#   "file:path:L1-LN" IDs. Smaller models (Haiku) hallucinate function
+#   signatures, return types, and call sites they didn't actually see.
+#   Sonnet/Opus read the injected chunks faithfully and cite them correctly.
+#
+# How semantic retrieval works in practice:
+#   The text of your `prompt:` field IS the embedding query. Write it to
+#   describe the code you want — the runner embeds that text and retrieves
+#   the chunks closest to it in vector space. Be specific:
+#     ✓ "error wrapping with fmt.Errorf and %w verb"
+#     ✗ "look at the code"
+#
+# Prerequisites:
+#   Ollama running:              ollama serve
+#   Embedding model pulled:      ollama pull nomic-embed-text
+#   Review model pulled:         ollama pull qwen2.5  (or use claude)
+#   orcai-claude installed:      cd plugins/claude && make install
+#   orcai-ollama installed:      cd plugins/ollama && make install
+#
+# Run from your project root:
+#   orcai pipeline run examples/code-review.pipeline.yaml
+#   orcai pipeline run examples/code-review.pipeline.yaml --var path=./internal/pipeline
+
+name: code-review
+version: "1"
+
+vars:
+  path: "."
+  extensions: ".go,.ts,.py"
+  chunk_size: "1500"
+
+steps:
+
+  # ── 1. Index the codebase into brain_vectors ────────────────────────────
+  # Walks path, splits files into ~1500-char chunks (10% overlap),
+  # embeds each chunk with nomic-embed-text, stores in orcai.db.
+  # Note IDs take the form  file:<path>:L<start>-L<end>  so the model
+  # can cite exact file locations in its output.
+  - id: index
+    executor: builtin.index_code
+    args:
+      path: "{{param.path}}"
+      extensions: "{{param.extensions}}"
+      chunk_size: "{{param.chunk_size}}"
+
+  - id: assert-indexed
+    executor: builtin.assert
+    needs: [index]
+    args:
+      condition: "not_empty"
+      value: "{{step.index.data.value}}"
+      message: "Nothing was indexed — check path and extensions."
+
+  # ── 2. Error handling review ─────────────────────────────────────────────
+  # Prompt text drives retrieval: "fmt.Errorf %w error wrapping sentinel errors"
+  # will pull chunks containing error-handling code. Sonnet reads the injected
+  # code faithfully and won't invent error types it didn't see.
+  - id: review-errors
+    plugin: claude
+    needs: [assert-indexed]
+    vars:
+      model: claude-sonnet-4-6
+    prompt: |
+      You are reviewing Go error handling. Focus on: fmt.Errorf %w error wrapping,
+      sentinel errors with errors.Is/As, missing error propagation, and swallowed errors.
+
+      The code chunks most relevant to this query have been injected above under
+      "## Relevant Brain Notes". Each chunk is identified by its file path and
+      line range (e.g. [file:internal/foo/bar.go:L45-L90]).
+
+      For each issue you find:
+      1. Quote the exact file:line reference from the injected chunks
+      2. Describe the problem precisely
+      3. Show the corrected version
+
+      If the injected chunks show no issues, say so explicitly — do not invent
+      problems that aren't in the provided code.
+
+      Codebase stats: {{step.index.data.value}}
+
+  # ── 3. Concurrency review ────────────────────────────────────────────────
+  # Different query text → different chunks retrieved from the same index.
+  # "goroutine mutex channel select race condition WaitGroup" targets
+  # concurrency code specifically.
+  - id: review-concurrency
+    plugin: claude
+    needs: [assert-indexed]
+    vars:
+      model: claude-sonnet-4-6
+    prompt: |
+      You are reviewing Go concurrency patterns. Focus on: goroutine leaks,
+      mutex/RWMutex usage, channel ownership, select with default, sync.WaitGroup
+      misuse, and data races.
+
+      The code chunks most relevant to "goroutine mutex channel select race condition
+      WaitGroup sync" have been injected above. Cite each finding by its
+      [file:path:Lstart-Lend] reference.
+
+      Do NOT fabricate code that isn't in the injected chunks. If nothing
+      concerning is present, say so.
+
+  # ── 4. Synthesise findings ───────────────────────────────────────────────
+  # Sonnet synthesises both reviews. RAG context at this step will reflect
+  # the combined query text — it sees both error-handling and concurrency chunks.
+  - id: synthesise
+    plugin: claude
+    needs: [review-errors, review-concurrency]
+    vars:
+      model: claude-sonnet-4-6
+    prompt: |
+      Synthesise the two review passes below into a prioritised action list.
+
+      Format:
+      ## Code Review Summary
+      ### Critical (fix before merge)
+      ### Moderate (fix in follow-up)
+      ### Minor (style / polish)
+
+      For each item, include the file:line reference and a one-line description.
+      Do not repeat the full analysis — just the actionable items.
+
+      Error handling review:
+      {{step.review-errors.data.value}}
+
+      Concurrency review:
+      {{step.review-concurrency.data.value}}
+
+  - id: done
+    executor: builtin.log
+    needs: [synthesise]
+    args:
+      message: |
+        ── Code Review ─────────────────────────────────────────────────
+        Indexed: {{step.index.data.value}}
+        {{step.synthesise.data.value}}
+        ─────────────────────────────────────────────────────────────────

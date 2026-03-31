@@ -1,0 +1,173 @@
+# security-scan.pipeline.yaml
+#
+# Security-focused scan using semantic code search. Indexes the codebase once,
+# then runs three targeted retrieval passes — each with a different query text
+# to surface different vulnerability classes from the same vector index.
+#
+# Why Opus for security work:
+#   Security findings based on RAG-injected code require exact reasoning about
+#   what the code does. Hallucinated CVEs or invented SQL queries that "look
+#   vulnerable" are worse than no output at all. Opus 4.6 has the highest
+#   faithfulness to retrieved context and is worth the cost for security passes.
+#   Use Sonnet if cost is a concern; avoid Haiku for this use case.
+#
+# Semantic query design for security:
+#   Each step's prompt contains the vocabulary of the vulnerability class.
+#   The embedding of "SQL query string concatenation user input exec" will
+#   retrieve SQL-adjacent code chunks. "jwt token verify signature secret key"
+#   retrieves auth code. Write your prompts like a security researcher would
+#   describe the bug — not like a user describing what they want.
+#
+# Prerequisites:
+#   Ollama running:              ollama serve
+#   Embedding model:             ollama pull nomic-embed-text
+#   orcai-claude installed:      cd plugins/claude && make install
+#
+# Run from your project root:
+#   orcai pipeline run examples/security-scan.pipeline.yaml
+#   orcai pipeline run examples/security-scan.pipeline.yaml --var path=./internal
+
+name: security-scan
+version: "1"
+
+vars:
+  path: "."
+  extensions: ".go,.ts,.py"
+
+steps:
+
+  # ── 1. Index ────────────────────────────────────────────────────────────
+  - id: index
+    executor: builtin.index_code
+    args:
+      path: "{{param.path}}"
+      extensions: "{{param.extensions}}"
+      chunk_size: "1500"
+
+  - id: assert-indexed
+    executor: builtin.assert
+    needs: [index]
+    args:
+      condition: "not_empty"
+      value: "{{step.index.data.value}}"
+      message: "Nothing was indexed."
+
+  # ── 2. Injection / input validation pass ────────────────────────────────
+  # Query vocabulary targets code that handles untrusted input:
+  # SQL string concat, os.Exec with user data, template injection, path traversal.
+  - id: scan-injection
+    plugin: claude
+    needs: [assert-indexed]
+    vars:
+      model: claude-opus-4-6
+    prompt: |
+      You are a security engineer auditing for injection vulnerabilities:
+      SQL injection (string concatenation into queries, fmt.Sprintf in SQL),
+      command injection (exec.Command with unsanitised input, os.Exec),
+      path traversal (filepath.Join with user input, ../),
+      template injection (html/template vs text/template misuse).
+
+      The code chunks most semantically similar to "SQL query string concatenation
+      user input exec command os filepath template injection unsanitised" are
+      injected above. Every chunk is identified by [file:path:Lstart-Lend].
+
+      Report only what you can directly see in the injected chunks.
+      Format each finding as:
+        SEVERITY: HIGH/MEDIUM/LOW
+        FILE: [exact file:line reference from injected context]
+        VULN: one-line description
+        CODE: the exact vulnerable snippet (copy from injected context)
+        FIX: corrected snippet
+
+      If the injected context shows no injection surface, say "No injection
+      vulnerabilities found in retrieved chunks."
+
+  # ── 3. Authentication / authorisation pass ──────────────────────────────
+  # Different vocabulary → different chunks from the same index.
+  - id: scan-auth
+    plugin: claude
+    needs: [assert-indexed]
+    vars:
+      model: claude-opus-4-6
+    prompt: |
+      You are a security engineer auditing authentication and authorisation:
+      JWT token verification, missing signature checks, hardcoded secrets,
+      password hashing (bcrypt vs weak hash), session token generation,
+      role/permission checks bypassable with type confusion.
+
+      The chunks most similar to "jwt token verify signature secret key password
+      hash bcrypt session auth bearer role permission" are injected above.
+
+      Report only what you can directly see. Format:
+        SEVERITY: HIGH/MEDIUM/LOW
+        FILE: [file:path:Lstart-Lend]
+        VULN: description
+        CODE: snippet from injected context
+        FIX: corrected version
+
+      If nothing concerning is present in the retrieved context, say so explicitly.
+
+  # ── 4. Sensitive data / logging pass ────────────────────────────────────
+  - id: scan-data-leak
+    plugin: claude
+    needs: [assert-indexed]
+    vars:
+      model: claude-opus-4-6
+    prompt: |
+      You are a security engineer auditing for sensitive data exposure:
+      secrets or credentials logged to stdout/stderr, API keys in source,
+      PII written to files or databases without encryption, debug endpoints
+      that expose internals, error messages that leak stack traces or DB schema.
+
+      Chunks similar to "log print secret key credential api password email
+      PII debug error stack trace leak" are injected above.
+
+      Report only what you can directly see. Same format:
+        SEVERITY: HIGH/MEDIUM/LOW
+        FILE: [file:path:Lstart-Lend]
+        VULN: description
+        CODE: snippet
+        FIX: corrected version
+
+  # ── 5. Opus synthesises all three passes into a SARIF-style report ───────
+  - id: report
+    plugin: claude
+    needs: [scan-injection, scan-auth, scan-data-leak]
+    vars:
+      model: claude-opus-4-6
+    prompt: |
+      Produce a security report from the three scan passes below.
+
+      ## Security Scan Report
+
+      ### Executive Summary
+      (2-3 sentences: overall risk posture, number of findings by severity)
+
+      ### Findings
+      (consolidated, deduplicated list sorted HIGH → MEDIUM → LOW)
+      For each: Severity | File | Vulnerability | Fix summary
+
+      ### Not Covered
+      (areas that need manual review because retrieval didn't surface them)
+
+      Only include findings backed by file:line citations from the scan passes.
+      Do not add findings that are not in the three reports below.
+
+      Injection scan:
+      {{step.scan-injection.data.value}}
+
+      Auth scan:
+      {{step.scan-auth.data.value}}
+
+      Data leak scan:
+      {{step.scan-data-leak.data.value}}
+
+  - id: done
+    executor: builtin.log
+    needs: [report]
+    args:
+      message: |
+        ── Security Scan: {{param.path}} ───────────────────────────────
+        Indexed: {{step.index.data.value}}
+        {{step.report.data.value}}
+        ─────────────────────────────────────────────────────────────────
