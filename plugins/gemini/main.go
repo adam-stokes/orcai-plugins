@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -8,7 +9,31 @@ import (
 	"strings"
 )
 
+// knownGeminiModels is the static list of Gemini models for --list-models.
+var knownGeminiModels = []struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}{
+	{"gemini-2.5-pro", "Gemini 2.5 Pro"},
+	{"gemini-2.5-flash", "Gemini 2.5 Flash"},
+	{"gemini-2.0-flash", "Gemini 2.0 Flash"},
+	{"gemini-1.5-pro", "Gemini 1.5 Pro"},
+}
+
 func main() {
+	// Handle --list-models before everything else.
+	for _, arg := range os.Args[1:] {
+		if arg == "--list-models" {
+			out, err := json.Marshal(knownGeminiModels)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			fmt.Println(string(out))
+			os.Exit(0)
+		}
+	}
+
 	code, err := run(os.Stdin, os.Stdout, os.Stderr, os.Getenv, execGemini)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

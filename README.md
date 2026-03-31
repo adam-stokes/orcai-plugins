@@ -9,9 +9,12 @@ Install a plugin by running `make install` in its directory.
 
 | Plugin | Description | Directory |
 |--------|-------------|-----------|
+| `claude` | Claude AI assistant via the `claude` CLI | [`plugins/claude/`](plugins/claude/) |
+| `codex` | OpenAI Codex coding agent via the `codex` CLI | [`plugins/codex/`](plugins/codex/) |
+| `gemini` | Google Gemini AI via the `gemini` CLI | [`plugins/gemini/`](plugins/gemini/) |
+| `github-copilot` | GitHub Copilot suggestions via the `gh` CLI | [`plugins/github-copilot/`](plugins/github-copilot/) |
 | `ollama` | Run local models via the Ollama daemon | [`plugins/ollama/`](plugins/ollama/) |
 | `opencode` | Agentic AI coding via `opencode run` (supports Ollama local models) | [`plugins/opencode/`](plugins/opencode/) |
-| `jq` | Apply a jq filter expression to JSON input (pure YAML sidecar, no binary) | [`plugins/jq/`](plugins/jq/) |
 
 ## Plugin Structure
 
@@ -29,9 +32,10 @@ plugins/
 
 1. Create `plugins/<name>/` with a `go.mod` declaring module `github.com/adam-stokes/orcai-plugins/plugins/<name>`.
 2. Implement a binary that reads prompt from stdin, reads config from `ORCAI_*` env vars, writes output to stdout, exits non-zero on error.
-3. Create `<name>.yaml` sidecar descriptor (see existing plugins for the format).
-4. Add a `Makefile` with `build`, `install`, and `test` targets.
-5. Open a PR.
+3. Implement `--list-models` to print a JSON array of `{"id": "...", "label": "..."}` objects and exit 0.
+4. Create `<name>.yaml` sidecar descriptor (see existing plugins for the format).
+5. Add a `Makefile` with `build`, `install`, and `test` targets.
+6. Open a PR.
 
 ## End-to-End Tests
 
@@ -45,14 +49,21 @@ make test-e2e
 **Prerequisites** (only needed for tests that use them — missing tools are SKIPped):
 
 - `orcai` — the core CLI
+- `orcai-claude` — `cd plugins/claude && make install`
+- `orcai-codex` — `cd plugins/codex && make install`
+- `orcai-gemini` — `cd plugins/gemini && make install`
+- `orcai-github-copilot` — `cd plugins/github-copilot && make install`
 - `orcai-ollama` — `cd plugins/ollama && make install`
 - `orcai-opencode` — `cd plugins/opencode && make install`
-- `ollama` — running daemon with `llama3.2` and/or `qwen3.5` pulled
+- `claude` — Claude Code CLI (`npm i -g @anthropic-ai/claude-code`)
+- `codex` — OpenAI Codex CLI (`npm install -g @openai/codex`)
+- `gemini` — Google Gemini CLI (`npm install -g @google/gemini-cli`)
+- `gh` — GitHub CLI with `gh extension install github/gh-copilot`
+- `ollama` — running daemon with desired models pulled
 - `opencode` — `brew install opencode` or `npm i -g opencode-ai`
-- `jq` — system jq (`brew install jq`)
 
 ## Prerequisites
 
 - [ORCAI](https://github.com/adam-stokes/orcai) installed and on `$PATH`.
 - Go 1.22+ for building plugins from source.
-- Each plugin may have additional prerequisites (see its README).
+- Each plugin may have additional prerequisites (see its README or sidecar YAML).
