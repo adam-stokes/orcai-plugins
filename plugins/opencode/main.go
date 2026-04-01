@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -87,11 +89,44 @@ func main() {
 }
 
 // execOpencode is the production executor: runs the real opencode binary.
+// Uses --format json and extracts only "text" event parts so that tool calls,
+// step markers, and other internal events never reach the caller's writer.
 func execOpencode(model, prompt string, stdout, stderr io.Writer) int {
-	cmd := exec.Command("opencode", "run", "--model", model, "--format", "default", "--", prompt)
-	cmd.Stdout = stdout
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+
+	cmd := exec.Command("opencode", "run", "--model", model, "--format", "json", "--", prompt)
+	cmd.Stdout = pw
 	cmd.Stderr = stderr
-	if err := cmd.Run(); err != nil {
+
+	if err := cmd.Start(); err != nil {
+		pw.Close()
+		pr.Close()
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+
+	pw.Close() // parent no longer writes; child holds the write end
+
+	// Stream only text content from the JSON event line.
+	scanner := bufio.NewScanner(pr)
+	for scanner.Scan() {
+		var event struct {
+			Type string `json:"type"`
+			Part struct {
+				Text string `json:"text"`
+			} `json:"part"`
+		}
+		if json.Unmarshal(scanner.Bytes(), &event) == nil && event.Type == "text" && event.Part.Text != "" {
+			fmt.Fprint(stdout, event.Part.Text)
+		}
+	}
+	pr.Close()
+
+	if err := cmd.Wait(); err != nil {
 		if exit, ok := err.(*exec.ExitError); ok {
 			return exit.ExitCode()
 		}
