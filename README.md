@@ -1,6 +1,6 @@
-# orcai-plugins
+# gl1tch plugins
 
-Official plugins for [ORCAI — the Agentic Bulletin Board System](https://github.com/adam-stokes/orcai).
+Official plugins for [GLITCH](https://github.com/powerglove-dev/gl1tch).
 
 Each plugin lives in `plugins/<name>/` with its own `go.mod`, `Makefile`, and sidecar YAML.
 Install a plugin by running `make install` in its directory.
@@ -25,13 +25,13 @@ plugins/
     main_test.go   # Unit tests
     go.mod         # Standalone Go module
     Makefile       # build / install / test targets
-    <name>.yaml    # Sidecar descriptor for orcai
+    <name>.yaml    # Sidecar descriptor for gl1tch
 ```
 
 ## Adding a New Plugin
 
-1. Create `plugins/<name>/` with a `go.mod` declaring module `github.com/adam-stokes/orcai-plugins/plugins/<name>`.
-2. Implement a binary that reads prompt from stdin, reads config from `ORCAI_*` env vars, writes output to stdout, exits non-zero on error.
+1. Create `plugins/<name>/` with a `go.mod` declaring module `github.com/powerglove-dev/plugins/plugins/<name>`.
+2. Implement a binary that reads prompt from stdin, reads config from `GLITCH_*` env vars, writes output to stdout, exits non-zero on error.
 3. Implement `--list-models` to print a JSON array of `{"id": "...", "label": "..."}` objects and exit 0.
 4. Create `<name>.yaml` sidecar descriptor (see existing plugins for the format).
 5. Add a `Makefile` with `build`, `install`, and `test` targets.
@@ -48,13 +48,13 @@ make test-e2e
 
 **Prerequisites** (only needed for tests that use them — missing tools are SKIPped):
 
-- `orcai` — the core CLI
-- `orcai-claude` — `cd plugins/claude && make install`
-- `orcai-codex` — `cd plugins/codex && make install`
-- `orcai-gemini` — `cd plugins/gemini && make install`
-- `orcai-github-copilot` — `cd plugins/github-copilot && make install`
-- `orcai-ollama` — `cd plugins/ollama && make install`
-- `orcai-opencode` — `cd plugins/opencode && make install`
+- `gl1tch` — the core CLI
+- `gl1tch-claude` — `cd plugins/claude && make install`
+- `gl1tch-codex` — `cd plugins/codex && make install`
+- `gl1tch-gemini` — `cd plugins/gemini && make install`
+- `gl1tch-github-copilot` — `cd plugins/github-copilot && make install`
+- `gl1tch-ollama` — `cd plugins/ollama && make install`
+- `gl1tch-opencode` — `cd plugins/opencode && make install`
 - `claude` — Claude Code CLI (`npm i -g @anthropic-ai/claude-code`)
 - `codex` — OpenAI Codex CLI (`npm install -g @openai/codex`)
 - `gemini` — Google Gemini CLI (`npm install -g @google/gemini-cli`)
@@ -64,6 +64,6 @@ make test-e2e
 
 ## Prerequisites
 
-- [ORCAI](https://github.com/adam-stokes/orcai) installed and on `$PATH`.
+- [GLITCH](https://github.com/powerglove-dev/gl1tch) installed and on `$PATH`.
 - Go 1.22+ for building plugins from source.
 - Each plugin may have additional prerequisites (see its README or sidecar YAML).
