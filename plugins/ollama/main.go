@@ -250,7 +250,27 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer, get
 		}
 	}
 
-	fmt.Fprint(stdout, result)
+	fmt.Fprint(stdout, result.Response)
+
+	// Emit token usage as a gl1tch-stats line so the gl1tch game engine can
+	// award XP based on actual token counts from the Ollama API response.
+	if result.EvalCount > 0 || result.PromptEvalCount > 0 {
+		statsModel := result.Model
+		if statsModel == "" {
+			statsModel = model
+		}
+		statsJSON, merr := json.Marshal(map[string]any{
+			"type":          "gl1tch-stats",
+			"model":         statsModel,
+			"input_tokens":  result.PromptEvalCount,
+			"output_tokens": result.EvalCount,
+			"duration_ms":   result.TotalDuration / 1_000_000,
+		})
+		if merr == nil {
+			fmt.Fprintf(stdout, "\n%s", statsJSON)
+		}
+	}
+
 	return nil
 }
 
@@ -264,12 +284,16 @@ type generateRequest struct {
 
 // generateResponse is the JSON body returned by Ollama when stream=false.
 type generateResponse struct {
-	Response string `json:"response"`
-	Error    string `json:"error,omitempty"`
+	Model           string `json:"model"`
+	Response        string `json:"response"`
+	Error           string `json:"error,omitempty"`
+	PromptEvalCount int64  `json:"prompt_eval_count"` // input tokens
+	EvalCount       int64  `json:"eval_count"`        // output tokens
+	TotalDuration   int64  `json:"total_duration"`    // nanoseconds
 }
 
-// callOllama sends a prompt to the Ollama /api/generate endpoint and returns the completion.
-func callOllama(baseURL, model, prompt string, options map[string]any) (string, error) {
+// callOllama sends a prompt to the Ollama /api/generate endpoint and returns the full response.
+func callOllama(baseURL, model, prompt string, options map[string]any) (generateResponse, error) {
 	body, err := json.Marshal(generateRequest{
 		Model:   model,
 		Prompt:  prompt,
@@ -277,31 +301,31 @@ func callOllama(baseURL, model, prompt string, options map[string]any) (string, 
 		Options: options,
 	})
 	if err != nil {
-		return "", fmt.Errorf("marshalling request: %w", err)
+		return generateResponse{}, fmt.Errorf("marshalling request: %w", err)
 	}
 
 	resp, err := http.Post(baseURL+"/api/generate", "application/json", bytes.NewReader(body))
 	if err != nil {
-		return "", fmt.Errorf("connecting to Ollama at %s: %w", baseURL, err)
+		return generateResponse{}, fmt.Errorf("connecting to Ollama at %s: %w", baseURL, err)
 	}
 	defer resp.Body.Close()
 
 	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("reading response: %w", err)
+		return generateResponse{}, fmt.Errorf("reading response: %w", err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("Ollama returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBytes)))
+		return generateResponse{}, fmt.Errorf("Ollama returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBytes)))
 	}
 
 	var genResp generateResponse
 	if err := json.Unmarshal(respBytes, &genResp); err != nil {
-		return "", fmt.Errorf("parsing response: %w", err)
+		return generateResponse{}, fmt.Errorf("parsing response: %w", err)
 	}
 	if genResp.Error != "" {
-		return "", fmt.Errorf("Ollama error: %s", genResp.Error)
+		return generateResponse{}, fmt.Errorf("Ollama error: %s", genResp.Error)
 	}
 
-	return genResp.Response, nil
+	return genResp, nil
 }

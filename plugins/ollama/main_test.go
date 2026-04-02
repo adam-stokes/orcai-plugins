@@ -387,8 +387,8 @@ func TestCallOllama_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result != "It works!" {
-		t.Errorf("expected 'It works!', got %q", result)
+	if result.Response != "It works!" {
+		t.Errorf("expected 'It works!', got %q", result.Response)
 	}
 }
 
